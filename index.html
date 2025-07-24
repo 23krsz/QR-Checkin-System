@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <title>Scanner Kehadiran</title>
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,400,500,700&display=swap">
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <style>
+    :root {
+      /* REVISI: Warna utama diubah ke ungu */
+      --primary-color: #673AB7; /* Material Design Purple */
+      --success-color-start: #00c853;
+      --success-color-end: #00796b;
+      --error-color-start: #d32f2f;
+      --error-color-end: #b71c1c;
+      --scan-line-color: #4285F4; /* Biarkan biru agar kontras? Atau sesuaikan */
+      --text-color-light: #ffffff;
+      --text-color-dark: #333333;
+      --bg-light: #f5f5f5;
+      --bg-dark: #333333;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      min-height: 100vh;
+      background: var(--bg-dark);
+      font-family: 'Roboto', sans-serif;
+      color: var(--text-color-light);
+      overflow: hidden;
+    }
+
+    .app-bar {
+      width: 100%;
+      background-color: var(--primary-color); /* Sekarang ungu */
+      color: var(--text-color-light);
+      /* REVISI: Padding vertikal ditambah, Font size digandakan */
+      padding: 20px 20px; /* Lebih banyak ruang atas/bawah */
+      font-size: 2.4em;   /* 2x dari 1.2em */
+      font-weight: 500;
+      text-align: center;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+      z-index: 10;
+      box-sizing: border-box;
+      /* Pastikan tinggi app-bar disesuaikan di JS atau perhitungan CSS jika diperlukan */
+      /* Kita biarkan dulu, mungkin tidak perlu penyesuaian tinggi eksplisit */
+    }
+
+    .scanner-container {
+       /* Perhitungan tinggi mungkin perlu disesuaikan jika tinggi app-bar berubah signifikan */
+       /* Coba biarkan dulu, browser modern biasanya menangani */
+      width: 100%;
+      height: calc(100vh - 88px); /* Perkiraan tinggi baru app-bar ~ 20+font+20 */
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background-color: var(--bg-dark);
+    }
+
+    #preview {
+      max-width: 100%;
+      max-height: 100%;
+      display: block;
+    }
+
+    .scan-overlay {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 70vmin;
+      height: 70vmin;
+      max-width: 80%;
+      max-height: 80%;
+      border-radius: 16px;
+      box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5);
+      z-index: 1;
+    }
+
+    .scan-line {
+      position: absolute;
+      left: 5%;
+      width: 90%;
+      height: 3px;
+      background: var(--scan-line-color);
+      border-radius: 3px;
+      box-shadow: 0 0 10px var(--scan-line-color);
+      animation: scan 2.5s infinite linear;
+      z-index: 2;
+    }
+
+    #result {
+      position: fixed;
+      bottom: -150px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 15px 30px;
+      border-radius: 28px;
+      color: var(--text-color-light);
+      width: auto;
+      min-width: 250px;
+      max-width: 90%;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+      transition: bottom 0.2s ease-out, background 0.3s;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 15px;
+    }
+
+    #result.show {
+      bottom: 225px;
+    }
+
+    #result .material-icons {
+      font-size: 2.5em;
+    }
+
+    .result-text {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        text-align: left;
+    }
+
+    .result-email {
+        font-size: 24px;
+        font-weight: 500;
+        line-height: 1.2;
+        color: var(--text-color-light);
+    }
+
+    .result-status {
+        font-size: 16px;
+        font-weight: 400;
+        line-height: 1.4;
+        margin-top: 4px;
+        color: var(--text-color-light);
+    }
+
+    .restart-button {
+      position: fixed;
+      bottom: 315px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 10px 20px; font-size: 1em; font-weight: 500;
+      color: var(--primary-color); /* Warna teks tombol ikut ungu */
+      background-color: var(--text-color-light);
+      border: none; border-radius: 20px; cursor: pointer;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.2); z-index: 25;
+      transition: opacity 0.3s, visibility 0.3s, bottom 0.3s;
+      opacity: 0; visibility: hidden;
+    }
+    .restart-button.show { opacity: 1; visibility: visible; }
+    @keyframes scan { 0% { top: 5%; } 50% { top: 95%; } 100% { top: 5%; } }
+  </style>
+</head>
+<body>
+  <div class="app-bar">Scanner Kehadiran</div>
+
+  <div class="scanner-container">
+    <video id="preview" playsinline></video>
+    <div class="scan-overlay"><div class="scan-line"></div></div>
+  </div>
+
+  <div id="result"></div>
+
+  <button id="restart-button" class="restart-button">Scan Lagi</button>
+
+  <script>
+    // Variabel global
+    const video = document.getElementById('preview');
+    const resultDiv = document.getElementById('result');
+    const restartButton = document.getElementById('restart-button');
+    const scannerContainer = document.querySelector('.scanner-container');
+    let isScanning = false;
+    let stream = null;
+    let audioCtx;
+
+    // --- Fungsi Inisialisasi Audio Context ---
+    function initAudioContext() {
+      if (!audioCtx) {
+        try {
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+          console.log("AudioContext siap.");
+        } catch (e) {
+          console.error("Web Audio API tidak didukung atau gagal diinisialisasi.", e);
+        }
+      }
+    }
+
+    // --- Fungsi untuk memainkan suara Beep ---
+    function playBeep() {
+      if (!audioCtx) {
+        console.warn("AudioContext belum siap untuk playBeep.");
+        initAudioContext();
+        if (!audioCtx) return;
+      }
+      try {
+        const oscillator = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+        oscillator.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+        gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+        oscillator.frequency.setValueAtTime(880, audioCtx.currentTime);
+        oscillator.type = 'sine';
+        oscillator.start(audioCtx.currentTime);
+        oscillator.stop(audioCtx.currentTime + 0.1);
+        console.log("Beep dimainkan.");
+      } catch (e) {
+        console.error("Gagal memainkan suara beep:", e);
+      }
+    }
+
+
+    // --- Fungsi Inisialisasi Kamera ---
+    function initCamera() {
+      initAudioContext();
+      const constraints = {
+        video: {
+          facingMode: "environment",
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+        audio: false
+      };
+      navigator.mediaDevices.getUserMedia(constraints)
+        .then(mediaStream => {
+          stream = mediaStream;
+          video.srcObject = stream;
+          video.onloadedmetadata = () => {
+            adjustVideoSize();
+            video.play();
+            isScanning = true;
+            resultDiv.classList.remove('show');
+            restartButton.classList.remove('show');
+            scanFrame();
+            console.log("Kamera siap dan scan dimulai.");
+          };
+        })
+        .catch(err => {
+          console.error("Error akses kamera:", err);
+          showFeedback(`🚫 Error Kamera: ${err.name}`, true, false);
+        });
+    }
+
+    // --- Fungsi untuk menyesuaikan ukuran video ---
+    function adjustVideoSize() {
+        if (!video.videoWidth || !video.videoHeight) return;
+        const containerWidth = scannerContainer.offsetWidth;
+        const containerHeight = scannerContainer.offsetHeight;
+        const videoRatio = video.videoWidth / video.videoHeight;
+        const containerRatio = containerWidth / containerHeight;
+        if (containerRatio > videoRatio) {
+            video.style.height = containerHeight + 'px';
+            video.style.width = (containerHeight * videoRatio) + 'px';
+        } else {
+            video.style.width = containerWidth + 'px';
+            video.style.height = (containerWidth / videoRatio) + 'px';
+        }
+        console.log(`Video size adjusted: ${video.style.width} x ${video.style.height}`);
+    }
+
+    // --- Fungsi Scan Frame ---
+    function scanFrame() {
+      if (!isScanning || !video.srcObject || video.paused || video.ended || video.readyState < 3) {
+          return;
+      }
+      const canvas = document.createElement('canvas');
+      const scale = 0.4; // Skala analisis gambar (0.4)
+      canvas.width = video.videoWidth * scale;
+      canvas.height = video.videoHeight * scale;
+      if (!canvas.width || !canvas.height) {
+          requestAnimationFrame(scanFrame);
+          return;
+      }
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      try {
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const code = jsQR(imageData.data, imageData.width, imageData.height, {
+          inversionAttempts: 'dontInvert'
+        });
+        if (code && code.data) {
+          handleScan(code.data);
+        } else {
+          requestAnimationFrame(scanFrame);
+        }
+      } catch (e) {
+        requestAnimationFrame(scanFrame);
+      }
+    }
+
+    // --- Fungsi Handle Hasil Scan ---
+    function handleScan(data) {
+      if (!isScanning) return;
+      isScanning = false;
+      console.log("Mengirim data ke server:", data);
+      if (navigator.vibrate) navigator.vibrate(400); // Getaran 400ms
+      playBeep();
+      google.script.run
+        .withSuccessHandler(response => {
+          console.log("Respon server:", response);
+          showResult(response);
+        })
+        .withFailureHandler(err => {
+          console.error("Error komunikasi server:", err);
+          showFeedback("🚫 Gagal terhubung ke server", true, true);
+        })
+        .updateAttendanceByBarcode(data);
+    }
+
+    // --- Fungsi Menampilkan Hasil Akhir ---
+    function showResult(response) {
+      let icon = '';
+      let bgColor = '';
+      let emailHTML = `<span class="result-email">${response.email || 'Data Tidak Dikenali'}</span>`;
+      let statusHTML = '';
+      switch (response.status) {
+        case 'new':
+          icon = 'check_circle';
+          statusHTML = `<span class="result-status">BERHASIL CHECK-IN!</span>`;
+          bgColor = `linear-gradient(45deg, ${getComputedStyle(document.documentElement).getPropertyValue('--success-color-start')}, ${getComputedStyle(document.documentElement).getPropertyValue('--success-color-end')})`;
+          break;
+        case 'duplicate':
+          icon = 'error';
+          statusHTML = `<span class="result-status">SUDAH HADIR SEBELUMNYA!</span>`;
+          bgColor = `linear-gradient(45deg, ${getComputedStyle(document.documentElement).getPropertyValue('--error-color-start')}, ${getComputedStyle(document.documentElement).getPropertyValue('--error-color-end')})`;
+          break;
+        case 'error':
+        default:
+          icon = 'warning';
+          emailHTML = `<span class="result-email">${response.email || 'Operasi Gagal'}</span>`;
+          statusHTML = `<span class="result-status">${response.message || 'GAGAL DIPROSES'}</span>`;
+          bgColor = `linear-gradient(45deg, #ffa726, #f57c00)`;
+          break;
+      }
+      resultDiv.innerHTML = `
+        <i class="material-icons">${icon}</i>
+        <div class="result-text">
+          ${emailHTML}
+          ${statusHTML}
+        </div>`;
+      resultDiv.style.background = bgColor;
+      resultDiv.classList.add('show');
+      restartButton.classList.add('show');
+    }
+
+    // --- Fungsi Menampilkan Feedback Sementara ---
+    function showFeedback(message, isError, allowRestart) {
+      if (navigator.vibrate) navigator.vibrate(isError ? [100, 50, 100] : 50);
+      resultDiv.innerHTML = message;
+      resultDiv.style.background = isError ? getComputedStyle(document.documentElement).getPropertyValue('--error-color-start') : '#607d8b';
+      resultDiv.classList.add('show');
+      if(allowRestart){
+         restartButton.classList.add('show');
+      } else {
+         setTimeout(() => {
+              resultDiv.classList.remove('show');
+         }, 3000);
+      }
+    }
+
+    // --- Fungsi Restart Scan ---
+    function restartScan() {
+      console.log("Restarting scan...");
+      restartButton.classList.remove('show');
+      resultDiv.classList.remove('show');
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+        video.srcObject = null;
+        console.log("Stream kamera sebelumnya dihentikan.");
+      }
+      initAudioContext();
+      setTimeout(initCamera, 100);
+    }
+
+    // --- Event Listener ---
+    restartButton.addEventListener('click', restartScan);
+    window.addEventListener('resize', adjustVideoSize);
+    window.addEventListener('load', initCamera);
+
+  </script>
+</body>
+</html>
